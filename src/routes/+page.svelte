@@ -1,156 +1,137 @@
 <script lang="ts">
-  import { invoke } from "@tauri-apps/api/core";
+  import { onMount } from 'svelte';
+  import { appState, type TabState } from '$lib/stores';
+  import TabBar from '$lib/components/TabBar.svelte';
+  import Sidebar from '$lib/components/Sidebar.svelte';
+  import MainPane from '$lib/components/MainPane.svelte';
+  import StatusBar from '$lib/components/StatusBar.svelte';
+  import '../app.css';
 
-  let name = $state("");
-  let greetMsg = $state("");
+  let currentState = $state({
+    tabs: [
+      {
+        id: 'default',
+        path: '/',
+        name: 'ホーム',
+      },
+    ],
+    activeTabId: 'default',
+    sidebarCollapsed: false,
+    currentDirectory: '/',
+  });
 
-  async function greet(event: Event) {
-    event.preventDefault();
-    // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
-    greetMsg = await invoke("greet", { name });
+  let selectedFiles = $state(0);
+  let totalFiles = $state(0);
+  let totalSize = $state(0);
+  let loading = $state(false);
+
+  function generateTabId(): string {
+    return `tab-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
   }
+
+  function handleAddTab() {
+    const newTab: TabState = {
+      id: generateTabId(),
+      path: currentState.currentDirectory,
+      name: 'New Tab',
+    };
+    
+    currentState.tabs = [...currentState.tabs, newTab];
+    currentState.activeTabId = newTab.id;
+  }
+
+  function handleCloseTab(tabId: string) {
+    if (currentState.tabs.length <= 1) return;
+    
+    const tabIndex = currentState.tabs.findIndex(tab => tab.id === tabId);
+    if (tabIndex === -1) return;
+    
+    currentState.tabs = currentState.tabs.filter(tab => tab.id !== tabId);
+    
+    if (currentState.activeTabId === tabId) {
+      const newActiveIndex = Math.min(tabIndex, currentState.tabs.length - 1);
+      currentState.activeTabId = currentState.tabs[newActiveIndex].id;
+    }
+  }
+
+  function handleSelectTab(tabId: string) {
+    currentState.activeTabId = tabId;
+    const activeTab = currentState.tabs.find(tab => tab.id === tabId);
+    if (activeTab) {
+      currentState.currentDirectory = activeTab.path;
+    }
+  }
+
+  function handleSidebarNavigate(path: string) {
+    const activeTab = currentState.tabs.find(tab => tab.id === currentState.activeTabId);
+    if (activeTab) {
+      activeTab.path = path;
+      activeTab.name = path.split('/').pop() || 'Root';
+      currentState.currentDirectory = path;
+    }
+  }
+
+  function handleToggleSidebar() {
+    currentState.sidebarCollapsed = !currentState.sidebarCollapsed;
+  }
+
+  let activeTab = $derived(currentState.tabs.find(tab => tab.id === currentState.activeTabId));
+  let currentPath = $derived(activeTab?.path || '/');
+
+  onMount(() => {
+    // Initialize with home directory
+    handleSidebarNavigate('/');
+  });
 </script>
 
-<main class="container">
-  <h1>Welcome to Tauri + Svelte</h1>
-
-  <div class="row">
-    <a href="https://vitejs.dev" target="_blank">
-      <img src="/vite.svg" class="logo vite" alt="Vite Logo" />
-    </a>
-    <a href="https://tauri.app" target="_blank">
-      <img src="/tauri.svg" class="logo tauri" alt="Tauri Logo" />
-    </a>
-    <a href="https://kit.svelte.dev" target="_blank">
-      <img src="/svelte.svg" class="logo svelte-kit" alt="SvelteKit Logo" />
-    </a>
+<div class="app-layout">
+  <TabBar 
+    tabs={currentState.tabs}
+    activeTabId={currentState.activeTabId}
+    on:addTab={handleAddTab}
+    on:closeTab={(e) => handleCloseTab(e.detail)}
+    on:selectTab={(e) => handleSelectTab(e.detail)}
+  />
+  
+  <div class="main-layout">
+    <Sidebar 
+      collapsed={currentState.sidebarCollapsed}
+      on:navigate={(e) => handleSidebarNavigate(e.detail)}
+      on:toggleCollapse={handleToggleSidebar}
+    />
+    
+    <MainPane 
+      currentPath={currentPath}
+      bind:loading
+    />
   </div>
-  <p>Click on the Tauri, Vite, and SvelteKit logos to learn more.</p>
-
-  <form class="row" onsubmit={greet}>
-    <input id="greet-input" placeholder="Enter a name..." bind:value={name} />
-    <button type="submit">Greet</button>
-  </form>
-  <p>{greetMsg}</p>
-</main>
+  
+  <StatusBar 
+    {selectedFiles}
+    {totalFiles}
+    {totalSize}
+    currentPath={currentPath}
+    {loading}
+  />
+</div>
 
 <style>
-.logo.vite:hover {
-  filter: drop-shadow(0 0 2em #747bff);
-}
-
-.logo.svelte-kit:hover {
-  filter: drop-shadow(0 0 2em #ff3e00);
-}
-
-:root {
-  font-family: Inter, Avenir, Helvetica, Arial, sans-serif;
-  font-size: 16px;
-  line-height: 24px;
-  font-weight: 400;
-
-  color: #0f0f0f;
-  background-color: #f6f6f6;
-
-  font-synthesis: none;
-  text-rendering: optimizeLegibility;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-  -webkit-text-size-adjust: 100%;
-}
-
-.container {
-  margin: 0;
-  padding-top: 10vh;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  text-align: center;
-}
-
-.logo {
-  height: 6em;
-  padding: 1.5em;
-  will-change: filter;
-  transition: 0.75s;
-}
-
-.logo.tauri:hover {
-  filter: drop-shadow(0 0 2em #24c8db);
-}
-
-.row {
-  display: flex;
-  justify-content: center;
-}
-
-a {
-  font-weight: 500;
-  color: #646cff;
-  text-decoration: inherit;
-}
-
-a:hover {
-  color: #535bf2;
-}
-
-h1 {
-  text-align: center;
-}
-
-input,
-button {
-  border-radius: 8px;
-  border: 1px solid transparent;
-  padding: 0.6em 1.2em;
-  font-size: 1em;
-  font-weight: 500;
-  font-family: inherit;
-  color: #0f0f0f;
-  background-color: #ffffff;
-  transition: border-color 0.25s;
-  box-shadow: 0 2px 2px rgba(0, 0, 0, 0.2);
-}
-
-button {
-  cursor: pointer;
-}
-
-button:hover {
-  border-color: #396cd8;
-}
-button:active {
-  border-color: #396cd8;
-  background-color: #e8e8e8;
-}
-
-input,
-button {
-  outline: none;
-}
-
-#greet-input {
-  margin-right: 5px;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    color: #f6f6f6;
-    background-color: #2f2f2f;
+  .app-layout {
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    background: var(--bg-primary);
   }
 
-  a:hover {
-    color: #24c8db;
+  .main-layout {
+    flex: 1;
+    display: flex;
+    overflow: hidden;
   }
 
-  input,
-  button {
-    color: #ffffff;
-    background-color: #0f0f0f98;
+  @media (max-width: 768px) {
+    .main-layout {
+      flex-direction: column;
+    }
   }
-  button:active {
-    background-color: #0f0f0f69;
-  }
-}
-
 </style>
