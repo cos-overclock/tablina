@@ -1,10 +1,19 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { appState, type TabState } from '$lib/stores';
+  import { appState, type TabState, type PaneState } from '$lib/stores';
   import TabBar from '$lib/components/TabBar.svelte';
   import Sidebar from '$lib/components/Sidebar.svelte';
   import MainPane from '$lib/components/MainPane.svelte';
   import StatusBar from '$lib/components/StatusBar.svelte';
+  import Pane from '$lib/components/Pane.svelte';
+  import { 
+    splitPane, 
+    closePane, 
+    addTabToPane, 
+    closeTabInPane, 
+    changeActiveTabInPane, 
+    findPaneById 
+  } from '$lib/utils/pane-utils';
   import '../app.css';
 
   let currentState = $state({
@@ -18,6 +27,21 @@
     activeTabId: 'default',
     sidebarCollapsed: false,
     currentDirectory: '/',
+    panes: [
+      {
+        id: 'root',
+        type: 'leaf' as const,
+        tabs: [
+          {
+            id: 'default',
+            path: '/',
+            name: 'ホーム',
+          },
+        ],
+        activeTabId: 'default',
+      },
+    ] as PaneState[],
+    activePaneId: 'root',
   });
 
   let selectedFiles = $state(0);
@@ -62,12 +86,57 @@
     }
   }
 
+  function handlePaneSplit(event: CustomEvent<{ paneId: string, direction: 'horizontal' | 'vertical' }>) {
+    const { paneId, direction } = event.detail;
+    currentState.panes = splitPane(currentState.panes, paneId, direction);
+  }
+
+  function handlePaneClose(event: CustomEvent<{ paneId: string }>) {
+    const { paneId } = event.detail;
+    const result = closePane(currentState.panes, paneId);
+    currentState.panes = result.panes;
+    if (result.newActivePaneId) {
+      currentState.activePaneId = result.newActivePaneId;
+    }
+  }
+
+  function handlePaneTabChange(event: CustomEvent<{ paneId: string, tabId: string }>) {
+    const { paneId, tabId } = event.detail;
+    currentState.panes = changeActiveTabInPane(currentState.panes, paneId, tabId);
+    
+    const pane = findPaneById(currentState.panes, paneId);
+    if (pane && pane.tabs) {
+      const tab = pane.tabs.find(t => t.id === tabId);
+      if (tab) {
+        currentState.currentDirectory = tab.path;
+      }
+    }
+  }
+
+  function handlePaneTabClose(event: CustomEvent<{ paneId: string, tabId: string }>) {
+    const { paneId, tabId } = event.detail;
+    currentState.panes = closeTabInPane(currentState.panes, paneId, tabId);
+  }
+
+  function handlePaneTabAdd(event: CustomEvent<{ paneId: string, path: string }>) {
+    const { paneId, path } = event.detail;
+    currentState.panes = addTabToPane(currentState.panes, paneId, path);
+  }
+
+  function handlePaneClick(event: CustomEvent<{ paneId: string }>) {
+    const { paneId } = event.detail;
+    currentState.activePaneId = paneId;
+  }
+
   function handleSidebarNavigate(path: string) {
-    const activeTab = currentState.tabs.find(tab => tab.id === currentState.activeTabId);
-    if (activeTab) {
-      activeTab.path = path;
-      activeTab.name = path.split('/').pop() || 'Root';
-      currentState.currentDirectory = path;
+    const activePane = findPaneById(currentState.panes, currentState.activePaneId);
+    if (activePane && activePane.tabs && activePane.activeTabId) {
+      const activeTab = activePane.tabs.find(tab => tab.id === activePane.activeTabId);
+      if (activeTab) {
+        activeTab.path = path;
+        activeTab.name = path.split('/').pop() || 'Root';
+        currentState.currentDirectory = path;
+      }
     }
   }
 
@@ -75,7 +144,8 @@
     currentState.sidebarCollapsed = !currentState.sidebarCollapsed;
   }
 
-  let activeTab = $derived(currentState.tabs.find(tab => tab.id === currentState.activeTabId));
+  let activePane = $derived(findPaneById(currentState.panes, currentState.activePaneId));
+  let activeTab = $derived(activePane?.tabs?.find(tab => tab.id === activePane.activeTabId));
   let currentPath = $derived(activeTab?.path || '/');
 
   onMount(() => {
@@ -85,14 +155,6 @@
 </script>
 
 <div class="app-layout">
-  <TabBar 
-    tabs={currentState.tabs}
-    activeTabId={currentState.activeTabId}
-    on:addTab={handleAddTab}
-    on:closeTab={(e) => handleCloseTab(e.detail)}
-    on:selectTab={(e) => handleSelectTab(e.detail)}
-  />
-  
   <div class="main-layout">
     <Sidebar 
       collapsed={currentState.sidebarCollapsed}
@@ -100,10 +162,20 @@
       on:toggleCollapse={handleToggleSidebar}
     />
     
-    <MainPane 
-      currentPath={currentPath}
-      bind:loading
-    />
+    <div class="pane-container">
+      {#each currentState.panes as pane}
+        <Pane 
+          {pane}
+          isActive={pane.id === currentState.activePaneId}
+          on:split={handlePaneSplit}
+          on:close={handlePaneClose}
+          on:tab-change={handlePaneTabChange}
+          on:tab-close={handlePaneTabClose}
+          on:tab-add={handlePaneTabAdd}
+          on:pane-click={handlePaneClick}
+        />
+      {/each}
+    </div>
   </div>
   
   <StatusBar 
@@ -126,6 +198,13 @@
   .main-layout {
     flex: 1;
     display: flex;
+    overflow: hidden;
+  }
+
+  .pane-container {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
     overflow: hidden;
   }
 

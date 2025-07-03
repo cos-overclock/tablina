@@ -5,12 +5,23 @@ export interface AppState {
   tabs: TabState[];
   activeTabId: string;
   sidebarCollapsed: boolean;
+  panes: PaneState[];
+  activePaneId: string;
 }
 
 export interface TabState {
   id: string;
   path: string;
   name: string;
+}
+
+export interface PaneState {
+  id: string;
+  type: 'horizontal' | 'vertical' | 'leaf';
+  children?: PaneState[];
+  tabs?: TabState[];
+  activeTabId?: string;
+  size?: number;
 }
 
 export const appState = writable<AppState>({
@@ -24,6 +35,21 @@ export const appState = writable<AppState>({
   ],
   activeTabId: 'default',
   sidebarCollapsed: false,
+  panes: [
+    {
+      id: 'root',
+      type: 'leaf',
+      tabs: [
+        {
+          id: 'default',
+          path: '/',
+          name: 'Home',
+        },
+      ],
+      activeTabId: 'default',
+    },
+  ],
+  activePaneId: 'root',
 });
 
 export const theme = writable<'light' | 'dark'>('light');
